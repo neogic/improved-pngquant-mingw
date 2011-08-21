@@ -33,6 +33,7 @@
       -verbose      print status messages (synonyms: -noquiet)\n\
       -speed N      speed/quality trade-off. 1=slow, 3=default, 10=fast & rough\n\
       -iebug        increase opacity to work around Internet Explorer 6 bug\n\
+      -transbug     transparent color will be moved to end of palette\n\
 \n\
    Quantizes one or more 32-bit RGBA PNGs to 8-bit (or smaller) RGBA-palette\n\
    PNGs using Floyd-Steinberg diffusion dithering (unless disabled).\n\
@@ -78,7 +79,7 @@ struct box {
     float weight;
 };
 
-pngquant_error pngquant(read_info *input_image, write_info *output_image, int floyd, int reqcolors, int ie_bug, int speed_tradeoff);
+pngquant_error pngquant(read_info *input_image, write_info *output_image, int floyd, int reqcolors, int ie_bug, int speed_tradeoff, int last_index_transparent);
 pngquant_error read_image(const char *filename, int using_stdin, read_info *input_image_p);
 pngquant_error write_image(write_info *output_image,const char *filename,const char *newext,int force,int using_stdin);
 
@@ -90,7 +91,7 @@ static int weightedcompare_b(const void *ch1, const void *ch2);
 static int weightedcompare_a(const void *ch1, const void *ch2);
 
 static f_pixel averagepixels(int indx, int clrs, hist_item achv[], float min_opaque_val);
-
+static int best_color_index(f_pixel px, hist_item* acolormap, int numcolors, float min_opaque_val);
 
 static int verbose=0;
 void verbose_printf(const char *fmt, ...)
@@ -109,6 +110,7 @@ int main(int argc, char *argv[])
     int force = FALSE;
     int ie_bug = FALSE;
     int speed_tradeoff = 3; // 1 max quality, 10 rough & fast. 3 is optimum.
+    int last_index_transparent = FALSE; // puts transparent color at last index. This is workaround for blu-ray subtitles.
     int using_stdin = FALSE;
     int latest_error=0, error_count=0, file_count=0;
     const char *filename, *newext = NULL;
@@ -138,6 +140,9 @@ int main(int argc, char *argv[])
         else if ( 0 == strncmp(argv[argn], "-noverbose", 4) ||
                   0 == strncmp(argv[argn], "-quiet", 2) )
             verbose = FALSE;
+
+        else if ( 0 == strcmp(argv[argn], "-transbug"))
+            last_index_transparent = TRUE;
 
         else if (0 == strcmp(argv[argn], "-ext")) {
             ++argn;
@@ -218,7 +223,7 @@ int main(int argc, char *argv[])
         retval = read_image(filename,using_stdin,&input_image);
 
         if (!retval) {
-            retval = pngquant(&input_image, &output_image, floyd, reqcolors, ie_bug, speed_tradeoff);
+            retval = pngquant(&input_image, &output_image, floyd, reqcolors, ie_bug, speed_tradeoff, last_index_transparent);
         }
 
         /* now we're done with the INPUT data and row_pointers, so free 'em */
@@ -274,7 +279,7 @@ static int popularity(const void *ch1, const void *ch2)
     return v1-v2;
 }
 
-void set_palette(write_info *output_image, int newcolors, hist_item acolormap[])
+void set_palette(write_info *output_image, int newcolors, hist_item acolormap[], int last_index_transparent)
 {
     assert(acolormap); assert(output_image);
 
@@ -291,29 +296,44 @@ void set_palette(write_info *output_image, int newcolors, hist_item acolormap[])
     ** therefore be omitted from the tRNS chunk.
     */
 
-    verbose_printf("  remapping colormap to eliminate opaque tRNS-chunk entries...");
-
-    /* move transparent colors to the beginning to shrink trns chunk */
     int num_transparent=0;
-    for(int i=0; i < newcolors; i++)
-    {
-        rgb_pixel px = to_rgb(output_image->gamma, acolormap[i].acolor);
-        if (px.a != 255) {
-            if (i != num_transparent) {
-                hist_item tmp = acolormap[num_transparent];
-                acolormap[num_transparent] = acolormap[i];
-                acolormap[i] = tmp;
-                i--;
+
+    if (last_index_transparent) {
+        int old = best_color_index((f_pixel){.r=1,.g=0,.b=1,.a=0}, acolormap, newcolors, 0);
+        int transparent_dest = newcolors-1;
+        hist_item tmp = acolormap[transparent_dest];
+        acolormap[transparent_dest] = acolormap[old];
+        acolormap[old] = tmp;
+        num_transparent = newcolors;
+
+        /* colors sorted by popularity make pngs slightly more compressible */
+        qsort(acolormap, newcolors-1, sizeof(acolormap[0]), popularity);
+
+    } else {
+        verbose_printf("  remapping colormap to eliminate opaque tRNS-chunk entries...");
+
+        /* move transparent colors to the beginning to shrink trns chunk */
+        for(int i=0; i < newcolors; i++) {
+            rgb_pixel px = to_rgb(output_image->gamma, acolormap[i].acolor);
+            if (px.a != 255) {
+                if (i != num_transparent) {
+                    hist_item tmp = acolormap[num_transparent];
+                    acolormap[num_transparent] = acolormap[i];
+                    acolormap[i] = tmp;
+                    i--;
+                }
+                num_transparent++;
             }
-            num_transparent++;
         }
+
+        verbose_printf("%d entr%s transparent\n", num_transparent, (num_transparent == 1)? "y" : "ies");
+
+        /* colors sorted by popularity make pngs slightly more compressible
+         * opaque and transparent are sorted separately
+         */
+        qsort(acolormap, num_transparent, sizeof(acolormap[0]), popularity);
+        qsort(acolormap+num_transparent, newcolors-num_transparent, sizeof(acolormap[0]), popularity);
     }
-
-    verbose_printf("%d entr%s transparent\n", num_transparent, (num_transparent == 1)? "y" : "ies");
-
-    /* colors sorted by popularity make pngs slightly more compressible */
-    qsort(acolormap, num_transparent, sizeof(acolormap[0]), popularity);
-    qsort(acolormap+num_transparent, newcolors-num_transparent, sizeof(acolormap[0]), popularity);
 
     output_image->num_palette = newcolors;
     output_image->num_trans = num_transparent;
@@ -365,7 +385,7 @@ inline static float colordifference(f_pixel px, f_pixel py)
 #endif
 }
 
-int best_color_index(f_pixel px, hist_item* acolormap, int numcolors, float min_opaque_val)
+static int best_color_index(f_pixel px, hist_item* acolormap, int numcolors, float min_opaque_val)
 {
     int ind=0;
 
@@ -734,7 +754,7 @@ pngquant_error read_image(const char *filename, int using_stdin, read_info *inpu
     return 0;
 }
 
-pngquant_error pngquant(read_info *input_image, write_info *output_image, int floyd, int reqcolors, int ie_bug, int speed_tradeoff)
+pngquant_error pngquant(read_info *input_image, write_info *output_image, int floyd, int reqcolors, int ie_bug, int speed_tradeoff, int last_index_transparent)
 {
     float min_opaque_val;
 
@@ -800,7 +820,7 @@ pngquant_error pngquant(read_info *input_image, write_info *output_image, int fl
     output_image->height = input_image->height;
     output_image->gamma = 0.45455;
 
-    set_palette(output_image, newcolors, acolormap);
+    set_palette(output_image, newcolors, acolormap, last_index_transparent);
 
     /*
     ** Step 3.7 [GRR]: allocate memory for the entire indexed image
