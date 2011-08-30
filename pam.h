@@ -16,6 +16,8 @@
 
 /* from pam.h */
 
+typedef __int32 register_t;    /* NWS: missing from MinGW sys/types.h */
+
 typedef struct {
     unsigned char r, g, b, a;
 } rgb_pixel;
