@@ -22,7 +22,7 @@
                 specify a mapfile, switch to grayscale */
 /* GRR TO DO:  if all samples are 0 or maxval, eliminate gAMA chunk (rwpng.c) */
 
-#define PNGQUANT_VERSION "1.4.3 (August 2011)"
+#define PNGQUANT_VERSION "1.4.3.1b (August 2011)"
 
 #define PNGQUANT_USAGE "\
    usage:  pngquant [options] [ncolors] [pngfile [pngfile ...]]\n\n\
@@ -48,10 +48,15 @@
 #include <string.h>
 #include <assert.h>
 #include <stdarg.h>
-#ifdef WIN32        /* defined in Makefile.w32 (or use _MSC_VER for MSVC) */
+/* NWS: always include needed WIN32 headers */
+/*#ifdef WIN32        / * defined in Makefile.w32 (or use _MSC_VER for MSVC) */
 #  include <fcntl.h>    /* O_BINARY */
 #  include <io.h>   /* setmode() */
-#endif
+/*#endif*/
+
+/* NWS: fix "undefined reference to `srandom'" */
+#define random rand
+#define srandom srand
 
 #include <math.h>
 #include <stddef.h>
