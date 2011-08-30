@@ -1,44 +1,37 @@
-Follow the steps below to build pngquant from source on Linux or UNIX systems.
+Follow the steps below to build pngquant from source on MinGW (tested Win 7 64-bit).
 
 You can skip first two steps if you have libpng installed on your system
 (although you may need to change paths in the Makefile)
 
-1. Download the zlib source code from:
-   http://www.zlib.net/
+1. Download the zlib source code, developer files and binaries ZIPs from:
+   http://gnuwin32.sourceforge.net/packages/zlib.htm
 
-      $ cd ..
-      $ wget http://prdownloads.sourceforge.net/libpng/zlib-1.2.5.tar.gz?download
+   Unzip the source ZIP and locate the sub-folder containing various source files 
+   incl. zlib.h - copy this folder into the parent folder of the 'pngquant' 
+   folder and rename it to 'zlib'.
 
-   Unpack it into the parent directory of the 'pngquant' directory and rename
-   it to 'zlib' - e.g.:
+   Unzip the dev files ZIP and copy the "lib" sub-folder to the "zlib" folder.
 
-      $ tar zxf zlib-1.2.5.tar.gz
-      $ mv zlib-1.2.5 zlib
+2. Download the libpng source code, developer files and binaries ZIPs from:
+   http://gnuwin32.sourceforge.net/packages/libpng.htm
 
-   Build it:
+   Unzip the source ZIP and locate the sub-folder containing various source files 
+   incl. png.h - copy this folder into the parent folder of the 'pngquant' folder 
+   and rename it to 'libpng'.
 
-      $ make
+   Unzip the dev files ZIP and copy the "lib" sub-folder to the "libpng" folder.
 
-2. Download the libpng source code from:
-   http://www.libpng.org/pub/png/libpng.html - e.g.:
+3. Run the MinGW Shell (MSYS) and navigate to the pngquant folder; e.g.:
 
-      $ cd ..
-      $ wget http://prdownloads.sourceforge.net/libpng/libpng-1.2.44.tar.gz?download
+   cd "c:\pngquant-src\pngquant\"
 
-   Unpack it into the parent directory of the 'pngquant' directory and rename
-   it to 'libpng' - e.g.:
+4. Type "make" to begin compilation. If is successful (should be!), a "bin" 
+   sub-folder will be created, containing "ipngquant.exe". If it fails, Google 
+   the error messages (but can ignore warnings - "missing braces" etc).
 
-      $ tar zxf libpng-1.2.44.tar.gz
-      $ mv libpng-1.2.44 libpng
+5. From the zlib/libpng binaries ZIPs, copy the "bin/*.dll" files - probably
+   just need "libpng3.dll" and "zlib1.dll", but names may vary slightly.
 
-   Build libpng:
+6. Run pnqquanti.exe - should work fine. If a missing DLL message is shown, 
+   check is in same folder. Congrats!
 
-      $ cd libpng
-      $ ./configure && make
-
-3. Go back to the pngquant directory and make using the Makefile.unx make file:
-
-      $ cd ../pngquant/
-      $ make
-
-That's it, you should now have a 'pngquant' executable in the current directory.
