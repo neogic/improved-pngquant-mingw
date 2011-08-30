@@ -1,6 +1,10 @@
 #PNGquant-improved
 
-This is a [fork](http://pornel.net/pngquant) of [pngquant](http://www.libpng.org/pub/png/apps/pngquant.html).
+This is a [fork](http://pornel.net/pngquant) of [pngquant](http://www.libpng.org/pub/png/apps/pngquant.html), 
+tweaked by [Neogic][http://www.neogic.com] so it compiles successfully on MinGW (tested Win 7 64-bit @ Aug 11). 
+Version bumped to 1.4.3.1b to mark as rough-and-ready quality! 
+
+Original description follows.
 
 ##Improvements
 
