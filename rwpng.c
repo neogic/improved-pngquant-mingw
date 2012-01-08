@@ -32,8 +32,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "png.h"        /* libpng header; includes zlib.h */
-#include "rwpng.h"      /* typedefs, common macros, public prototypes */
+#include "png.h"
+#include "zlib.h"
+#include "rwpng.h"
 
 static void rwpng_error_handler(png_structp png_ptr, png_const_charp msg);
 
@@ -91,13 +92,6 @@ pngquant_error rwpng_read_image(FILE *infile, read_info *mainprog_ptr)
         return PNG_OUT_OF_MEMORY_ERROR;   /* out of memory */
     }
 
-
-    /* GRR TO DO:  use end_info struct */
-    /* we could create a second info struct here (end_info), but it's only
-     * useful if we want to keep pre- and post-IDAT chunk info separated
-     * (mainly for PNG-aware image editors and converters) */
-
-
     /* setjmp() must be called in every function that calls a non-trivial
      * libpng function */
 
@@ -125,10 +119,7 @@ pngquant_error rwpng_read_image(FILE *infile, read_info *mainprog_ptr)
      * transparency chunks to full alpha channel; strip 16-bit-per-sample
      * images to 8 bits per sample; and convert grayscale to RGB[A] */
 
-    /* GRR TO DO:  handle each of GA, RGB, RGBA without conversion to RGBA */
-    /* GRR TO DO:  allow sub-8-bit quantization? */
     /* GRR TO DO:  preserve all safe-to-copy ancillary PNG chunks */
-    /* GRR TO DO:  get and map background color? */
 
     if (!(color_type & PNG_COLOR_MASK_ALPHA)) {
 #ifdef PNG_READ_FILLER_SUPPORTED
@@ -149,10 +140,9 @@ pngquant_error rwpng_read_image(FILE *infile, read_info *mainprog_ptr)
     if (png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS))
         png_set_expand(png_ptr);
  */
-    /* GRR TO DO:  handle 16-bps data natively? */
     if (bit_depth == 16)
         png_set_strip_16(png_ptr);
-    /* GRR TO DO:  probably want to handle this separately, without expansion */
+
     if (color_type == PNG_COLOR_TYPE_GRAY ||
         color_type == PNG_COLOR_TYPE_GRAY_ALPHA)
         png_set_gray_to_rgb(png_ptr);
@@ -163,6 +153,8 @@ pngquant_error rwpng_read_image(FILE *infile, read_info *mainprog_ptr)
     if (!png_get_gAMA(png_ptr, info_ptr, &mainprog_ptr->gamma)) {
         mainprog_ptr->gamma = 0.45455;
     }
+
+    png_set_interlace_handling(png_ptr);
 
     /* all transformations have been registered; now update info_ptr data,
      * get rowbytes and channels, and allocate image memory */
@@ -184,9 +176,6 @@ pngquant_error rwpng_read_image(FILE *infile, read_info *mainprog_ptr)
         mainprog_ptr->rgba_data = NULL;
         return PNG_OUT_OF_MEMORY_ERROR;
     }
-
-    Trace((stderr, "readpng_get_image:  channels = %d, rowbytes = %ld, height = %ld\n", mainprog_ptr->channels, rowbytes, mainprog_ptr->height));
-
 
     /* set the individual row_pointers to point at the correct offsets */
 
@@ -257,27 +246,12 @@ pngquant_error rwpng_write_image_init(FILE *outfile, write_info *mainprog_ptr)
 
     png_init_io(png_ptr, outfile);
 
-
-    /* set the compression levels--in general, always want to leave filtering
-     * turned on (except for palette images) and allow all of the filters,
-     * which is the default; want 32K zlib window, unless entire image buffer
-     * is 16K or smaller (unknown here)--also the default; usually want max
-     * compression (NOT the default); and remaining compression flags should
-     * be left alone */
-
     png_set_compression_level(png_ptr, Z_BEST_COMPRESSION);
-/*
-    >> this is default for no filtering; Z_FILTERED is default otherwise:
-    png_set_compression_strategy(png_ptr, Z_DEFAULT_STRATEGY);
-    >> these are all defaults:
-    png_set_compression_mem_level(png_ptr, 8);
-    png_set_compression_window_bits(png_ptr, 15);
-    png_set_compression_method(png_ptr, 8);
- */
 
+    // Palette images generally don't gain anything from filtering
+    png_set_filter(png_ptr, PNG_FILTER_TYPE_BASE, PNG_FILTER_VALUE_NONE);
 
     /* set the image parameters appropriately */
-
     int sample_depth;
     if (mainprog_ptr->num_palette <= 2)
         sample_depth = 1;
@@ -291,7 +265,7 @@ pngquant_error rwpng_write_image_init(FILE *outfile, write_info *mainprog_ptr)
     png_set_IHDR(png_ptr, info_ptr, mainprog_ptr->width, mainprog_ptr->height,
       sample_depth, PNG_COLOR_TYPE_PALETTE,
       mainprog_ptr->interlaced, PNG_COMPRESSION_TYPE_DEFAULT,
-      PNG_FILTER_TYPE_DEFAULT);
+      PNG_FILTER_TYPE_BASE);
 
     /* GRR WARNING:  cast of rwpng_colorp to png_colorp could fail in future
      * major revisions of libpng (but png_ptr/info_ptr will fail, regardless) */
@@ -303,70 +277,8 @@ pngquant_error rwpng_write_image_init(FILE *outfile, write_info *mainprog_ptr)
     if (mainprog_ptr->gamma > 0.0)
         png_set_gAMA(png_ptr, info_ptr, mainprog_ptr->gamma);
 
-#if 0
-    if (mainprog_ptr->have_bg) {   /* we know it's RGBA, not gray+alpha */
-        png_color_16  background;
-
-        background.red = mainprog_ptr->bg_red;
-        background.green = mainprog_ptr->bg_green;
-        background.blue = mainprog_ptr->bg_blue;
-        png_set_bKGD(png_ptr, info_ptr, &background);
-    }
-
-    if (mainprog_ptr->have_time) {
-        png_time  modtime;
-
-        png_convert_from_time_t(&modtime, mainprog_ptr->modtime);
-        png_set_tIME(png_ptr, info_ptr, &modtime);
-    }
-
-    if (mainprog_ptr->have_text) {
-        png_text  text[6];
-        int  num_text = 0;
-
-        if (mainprog_ptr->have_text & TEXT_TITLE) {
-            text[num_text].compression = PNG_TEXT_COMPRESSION_NONE;
-            text[num_text].key = "Title";
-            text[num_text].text = mainprog_ptr->title;
-            ++num_text;
-        }
-        if (mainprog_ptr->have_text & TEXT_AUTHOR) {
-            text[num_text].compression = PNG_TEXT_COMPRESSION_NONE;
-            text[num_text].key = "Author";
-            text[num_text].text = mainprog_ptr->author;
-            ++num_text;
-        }
-        if (mainprog_ptr->have_text & TEXT_DESC) {
-            text[num_text].compression = PNG_TEXT_COMPRESSION_NONE;
-            text[num_text].key = "Description";
-            text[num_text].text = mainprog_ptr->desc;
-            ++num_text;
-        }
-        if (mainprog_ptr->have_text & TEXT_COPY) {
-            text[num_text].compression = PNG_TEXT_COMPRESSION_NONE;
-            text[num_text].key = "Copyright";
-            text[num_text].text = mainprog_ptr->copyright;
-            ++num_text;
-        }
-        if (mainprog_ptr->have_text & TEXT_EMAIL) {
-            text[num_text].compression = PNG_TEXT_COMPRESSION_NONE;
-            text[num_text].key = "E-mail";
-            text[num_text].text = mainprog_ptr->email;
-            ++num_text;
-        }
-        if (mainprog_ptr->have_text & TEXT_URL) {
-            text[num_text].compression = PNG_TEXT_COMPRESSION_NONE;
-            text[num_text].key = "URL";
-            text[num_text].text = mainprog_ptr->url;
-            ++num_text;
-        }
-        png_set_text(png_ptr, info_ptr, text, num_text);
-    }
-#endif /* 0 */
-
 
     /* write all chunks up to (but not including) first IDAT */
-
     png_write_info(png_ptr, info_ptr);
 
 
@@ -381,11 +293,8 @@ pngquant_error rwpng_write_image_init(FILE *outfile, write_info *mainprog_ptr)
      * into bytes (one, two or four pixels per byte) */
 
     png_set_packing(png_ptr);
-/*  png_set_shift(png_ptr, &sig_bit);  to scale low-bit-depth values */
-
 
     /* make sure we save our pointers for use in writepng_encode_image() */
-
     mainprog_ptr->png_ptr = png_ptr;
     mainprog_ptr->info_ptr = info_ptr;
 
