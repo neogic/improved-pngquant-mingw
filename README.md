@@ -1,7 +1,9 @@
 #pngquant
 
 This is a fork of [pngquant](http://pngquant.org), 
-tweaked by [Neogic](http://www.neogic.com) so it should compile successfully on MinGW. UPDATE: compilation hasn't been tested since merging the latest 1.6.4 changes to ipngquant, and the binaries have not been updated. This fork is intended to be a one-off HOW TO, rather than an actively maintained Windows fork, but get in touch if you're interested in actively maintaining.
+tweaked by [Neogic](http://www.neogic.com) so it should compile successfully on MinGW. 
+
+UPDATE: compilation hasn't been tested since merging the latest 1.6.4 changes to pngquant, and the binaries have not been updated since v1.4.3.1. This fork is intended to be a one-off HOW TO, rather than an actively maintained Windows fork, but get in touch if you're interested in actively maintaining. For the latest version of pngquant, please see the [original repo](https://github.com/pornel/improved-pngquant).
 
 pngquant converts 24/32-bit RGBA PNGs to 8-bit palette with *alpha channel preserved*. Such images are compatible with all modern browsers, and a special compatibility setting exists which helps transparency degrade well in Internet Explorer 6.
 
