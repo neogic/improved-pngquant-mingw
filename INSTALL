@@ -26,7 +26,7 @@ You can skip first two steps if you have libpng installed on your system
    cd "c:\pngquant-src\pngquant\"
 
 4. Type "make" to begin compilation. If is successful (should be!), a "bin" 
-   sub-folder will be created, containing "ipngquant.exe". If it fails, Google 
+   sub-folder will be created, containing "pngquanti.exe". If it fails, Google 
    the error messages (but can ignore warnings - "missing braces" etc).
 
 5. From the zlib/libpng binaries ZIPs, copy the "bin/*.dll" files - probably
