@@ -29,20 +29,11 @@
 
   ---------------------------------------------------------------------------*/
 
+#include "png.h"    /* libpng header; includes zlib.h */
+
 #ifndef TRUE
 #  define TRUE 1
 #  define FALSE 0
-#endif
-
-#ifndef MAX
-#  define MAX(a,b)  ((a) > (b)? (a) : (b))
-#  define MIN(a,b)  ((a) < (b)? (a) : (b))
-#endif
-
-#ifdef DEBUG
-#  define Trace(x)  {fprintf x ; fflush(stderr); fflush(stdout);}
-#else
-#  define Trace(x)  ;
 #endif
 
 typedef enum {
@@ -52,6 +43,7 @@ typedef enum {
     NOT_OVERWRITING_ERROR = 15,
     CANT_WRITE_ERROR = 16,
     OUT_OF_MEMORY_ERROR = 17,
+    WRONG_ARCHITECTURE = 18, // Missing SSE3
     PNG_OUT_OF_MEMORY_ERROR = 24,
     INIT_OUT_OF_MEMORY_ERROR = 34,
     BAD_SIGNATURE_ERROR = 21,

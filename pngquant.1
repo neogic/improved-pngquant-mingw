@@ -1,0 +1,53 @@
+.TH PNGQUANT 1 "Tue, 06 Dec 2011 22:33:44 +0000"
+.SH NAME
+pngquant \- PNG image optimisation utility
+.SH SYNOPSIS
+.B pngquant
+.RI "[ options ] [ ncolors ] pngfile [ pngfile ... ]"
+.br
+.B pngquant
+.RI "[ options ] - <pngfile >pngfile
+.br
+.PP
+Arguments in square brackets are optional.
+.SH DESCRIPTION
+.PP
+.B pngquant
+converts 32-bit RGBA PNGs to 8-bit (or smaller) RGBA-palette PNGs, optionally using Floyd-Steinberg dithering (default).
+
+The output filename is the same as the input name except that it ends in \fI-fs8.png\fP or \fI-or8.png\fP (unless the input is stdin, in which case the quantized image will go to stdout).
+The default behavior if the output file exists is to skip the conversion; use \fI-force\fP to overwrite.
+.SH OPTIONS
+.TP
+.B \-force, -f
+Overwrite existing output files.
+.TP
+.B \-nofs
+Do not use dithering.
+.TP
+.B \-verbose, -v
+Print status messages.
+.TP
+.B \-ext <new.png>
+File extension (suffix) to use for output files instead of the default \fI-fs8.png\fP/\fI-or8.png\fP.
+.TP
+.B \-speed <N>, -s <N>
+Speed/quality trade-off from 1 (brute-force) to 10 (fastest). The default is 3. Speed 10 has 5% lower quality, but is about 8 times faster than the default.
+.TP
+.B \-iebug
+Workaround for Internet Explorer 6, which only displays fully opaque pixels. pngquant will make almost-opaque pixels fully opaque and will reduce amount of semi-transparent colors. When this option is enabled the default filename suffix is \fI-ie-fs8.png\fP/\fI-ie-or8.png\fP.
+.TP
+.B \-version
+Prints version information.
+.TP
+.SH EXAMPLE
+Creating a new image with the number of colors reduced to 64:
+.TP
+	pngquant 64 image.png
+.TP
+The resulting image will have 64 colors and will be saved as \fBimage-fs8.png\fP.
+.SH AUTHOR
+pngquant was written by Greg Roelofs <newt@pobox.com> and Kornel Lesinski. See <http://pngquant.org>.
+.PP
+This manual page was created by Nelson A. de Oliveira <naoliv@debian.org>,
+for the Debian project (but may be used by others).

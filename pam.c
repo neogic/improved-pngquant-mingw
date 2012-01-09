@@ -12,73 +12,15 @@
  ** implied warranty.
  */
 
-#include <stdio.h>
 #include <stdlib.h>
-#include <assert.h>
-#include <sys/types.h>
 
 #include "pam.h"
+#include "mempool.h"
 
-#ifdef __LP64__
-typedef unsigned long long u_register_t;
-#else
-typedef unsigned long u_register_t;
-#endif
-
-#ifdef __LP64__
-#define PAM_EQUAL(p,q)                  \
-((union {\
-    f_pixel f;\
-    struct {u_register_t l1, l2;} l;\
-}){p}.l.l1 == \
-(union {\
-    f_pixel f;\
-struct {u_register_t l1, l2;} l;\
-}){q}.l.l1 &&\
-(union {\
-    f_pixel f;\
-    struct {u_register_t l1, l2;} l;\
-}){p}.l.l2 == \
-(union {\
-    f_pixel f;\
-struct {u_register_t l1, l2;} l;\
-}){q}.l.l2)
-#else
-    #define PAM_EQUAL(p,q) \
-    ((p).r == (q).r && (p).g == (q).g && (p).b == (q).b && (p).a == (q).a)
-#endif
-
-static hist_item *pam_acolorhashtoacolorhist(acolorhash_table acht, int maxacolors);
-static acolorhash_table pam_computeacolorhash(rgb_pixel*const* apixels, int cols, int rows, double gamma, int maxacolors, int ignorebits, int* acolorsP);
+static hist *pam_acolorhashtoacolorhist(acolorhash_table acht, int maxacolors, float gamma);
+static acolorhash_table pam_computeacolorhash(const rgb_pixel*const* apixels, int cols, int rows, double gamma, int maxacolors, int ignorebits, const float *importance, int* acolorsP);
 static void pam_freeacolorhash(acolorhash_table acht);
 static acolorhash_table pam_allocacolorhash(void);
-
-
-/*
-
- libpam3.c:
- pam_computeacolorhist( )
- NOTUSED pam_addtoacolorhist( )
- pam_computeacolorhash( )
- pam_allocacolorhash( )
- pam_addtoacolorhash( )
- pam_acolorhashtoacolorhist( )
- NOTUSED pam_acolorhisttoacolorhash( )
- pam_lookupacolor( )
- pam_freeacolorhist( )
- pam_freeacolorhash( )
-
- libpbm1.c:
- pm_freearray( )
- pm_allocrow( )
-
- pam.h:
- pam_freearray( )
- */
-
-
-/*===========================================================================*/
-
 
 /* libpam3.c - pam (portable alpha map) utility library part 3
  **
@@ -95,139 +37,75 @@ static acolorhash_table pam_allocacolorhash(void);
  ** implied warranty.
  */
 
-/*
- #include "pam.h"
- #include "pamcmap.h"
- */
-
 #define HASH_SIZE 30029
 
-typedef struct mempool {
-    struct mempool *next;
-    size_t used;
-} *mempool;
-
-#define MEMPOOL_RESERVED ((sizeof(struct mempool)+15) & ~0xF)
-#define MEMPOOL_SIZE (1<<18)
-
-static void* mempool_new(mempool *mptr, size_t size)
-{
-    assert(size < MEMPOOL_SIZE-MEMPOOL_RESERVED);
-
-    if (*mptr && ((*mptr)->used+size) <= MEMPOOL_SIZE) {
-        int prevused = (*mptr)->used;
-        (*mptr)->used += (size+15) & ~0xF;
-        return ((char*)(*mptr)) + prevused;
-    }
-
-    mempool old = mptr ? *mptr : NULL;
-    char *mem = calloc(MEMPOOL_SIZE, 1);
-
-    (*mptr) = (mempool)mem;
-    (*mptr)->used = MEMPOOL_RESERVED;
-    (*mptr)->next = old;
-
-    return mempool_new(mptr, size);
-}
-
-static void mempool_free(mempool m)
-{
-    while (m) {
-        mempool next = m->next;
-        free(m);
-        m = next;
-    }
-}
-
-
-#define ROTL(x, n) ( (u_register_t)((x) << (n)) | (u_register_t)((x) >> (sizeof(u_register_t)*8-(n))) )
-inline static  unsigned long pam_hashapixel(f_pixel p)
-{
-    assert(sizeof(u_register_t) == sizeof(register_t));
-
-#ifdef __LP64__
-    union {
-        f_pixel f;
-        struct {register_t l1, l2;} l;
-    } h = {p};
-
-    assert(sizeof(h.l) == sizeof(f_pixel));
-
-    return (ROTL(h.l.l1,13) ^ h.l.l2) % HASH_SIZE;
-#else
-    union {
-        f_pixel f;
-        struct {register_t l1, l2, l3, l4;} l;
-    } h = {p};
-
-    assert(sizeof(h.l) == sizeof(f_pixel));
-
-    return (ROTL(h.l.l1,3) ^ ROTL(h.l.l2,7) ^ ROTL(h.l.l3,11) ^ h.l.l4) % HASH_SIZE;
-#endif
-}
-
-#define PAM_SCALE(p, oldmaxval, newmaxval) ((int)(p) >= (oldmaxval) ? (newmaxval) : (int)(p) * ((newmaxval)+1) / (oldmaxval))
-
-hist_item *pam_computeacolorhist(rgb_pixel*const* apixels, int cols, int rows, double gamma, int maxacolors, int ignorebits, int* acolorsP)
+/**
+ * Builds color histogram no larger than maxacolors. Ignores (posterizes) ignorebits lower bits in each color.
+ * perceptual_weight of each entry is increased by value from importance_map
+ */
+hist *pam_computeacolorhist(const rgb_pixel*const apixels[], int cols, int rows, double gamma, int maxacolors, int ignorebits, const float *importance_map)
 {
     acolorhash_table acht;
-    hist_item *achv;
+    hist *achv;
 
-    acht = pam_computeacolorhash(apixels, cols, rows, gamma, maxacolors, ignorebits, acolorsP);
+    int hist_size=0;
+    acht = pam_computeacolorhash(apixels, cols, rows, gamma, maxacolors, ignorebits, importance_map, &hist_size);
     if (!acht) return 0;
 
-    achv = pam_acolorhashtoacolorhist(acht, maxacolors);
+    achv = pam_acolorhashtoacolorhist(acht, hist_size, gamma);
     pam_freeacolorhash(acht);
     return achv;
 }
 
-static acolorhash_table pam_computeacolorhash(rgb_pixel*const* apixels, int cols, int rows, double gamma, int maxacolors, int ignorebits, int* acolorsP)
+static acolorhash_table pam_computeacolorhash(const rgb_pixel*const* apixels, int cols, int rows, double gamma, int maxacolors, int ignorebits, const float *importance_map, int* acolorsP)
 {
-    acolorhash_table acht; acolorhist_list *buckets;
-    acolorhist_list achl;
+    acolorhash_table acht;
+    struct acolorhist_list_item *achl, **buckets;
     int col, row, hash;
-    const int maxval = 255>>ignorebits;
+    const unsigned int channel_mask = 255>>ignorebits<<ignorebits;
+    const unsigned int channel_hmask = (255>>(ignorebits)) ^ 0xFF;
+    const unsigned int posterize_mask = channel_mask << 24 | channel_mask << 16 | channel_mask << 8 | channel_mask;
+    const unsigned int posterize_high_mask = channel_hmask << 24 | channel_hmask << 16 | channel_hmask << 8 | channel_hmask;
     acht = pam_allocacolorhash();
     buckets = acht->buckets;
-    *acolorsP = 0;
+    int colors=0;
 
     /* Go through the entire image, building a hash table of colors. */
     for (row = 0; row < rows; ++row) {
+
+        float boost=1.0;
         for (col = 0; col < cols; ++col) {
-
-            rgb_pixel px = apixels[row][col];
-
-            if (maxval != 255) {
-                px.r = PAM_SCALE(px.r, 255, maxval); px.r = PAM_SCALE(px.r, maxval, 255);
-                px.g = PAM_SCALE(px.g, 255, maxval); px.g = PAM_SCALE(px.g, maxval, 255);
-                px.b = PAM_SCALE(px.b, 255, maxval); px.b = PAM_SCALE(px.b, maxval, 255);
-                px.a = PAM_SCALE(px.a, 255, maxval); px.a = PAM_SCALE(px.a, maxval, 255);
+            if (importance_map) {
+                boost = 0.5+*importance_map++;
             }
 
-            f_pixel fpx = to_f(gamma, px);
+            union rgb_as_long px = {apixels[row][col]};
+            px.l = (px.l & posterize_mask) | ((px.l & posterize_high_mask) >> (8-ignorebits));
+            hash = px.l % HASH_SIZE;
 
-            hash = pam_hashapixel(fpx);
-
-            for (achl = buckets[hash]; achl != NULL; achl = achl->next)
-                if (PAM_EQUAL(achl->ch.acolor, fpx))
+            for (achl = buckets[hash]; achl != NULL; achl = achl->next) {
+                if (achl->color.l == px.l)
                     break;
+            }
+
             if (achl != NULL) {
-                ++(achl->ch.value);
+                achl->perceptual_weight += boost;
             } else {
-                if (++(*acolorsP) > maxacolors) {
+                if (++colors > maxacolors) {
                     pam_freeacolorhash(acht);
                     return NULL;
                 }
                 achl = mempool_new(&acht->mempool, sizeof(struct acolorhist_list_item));
 
-                achl->ch.acolor = fpx;
-                achl->ch.value = 1;
+                achl->color = px;
+                achl->perceptual_weight = boost;
                 achl->next = buckets[hash];
                 buckets[hash] = achl;
             }
         }
 
     }
+    *acolorsP = colors;
     return acht;
 }
 
@@ -240,26 +118,27 @@ static acolorhash_table pam_allocacolorhash()
     return t;
 }
 
-static hist_item *pam_acolorhashtoacolorhist(acolorhash_table acht, int maxacolors)
+static hist *pam_acolorhashtoacolorhist(acolorhash_table acht, int hist_size, float gamma)
 {
-    hist_item *achv;
-    acolorhist_list achl;
-    int i, j;
-
-    /* Now collate the hash table into a simple acolorhist array. */
-    achv = (hist_item *) malloc(maxacolors * sizeof(achv[0]));
+    hist *hist = malloc(sizeof(hist[0]));
+    hist->achv = malloc(hist_size * sizeof(hist->achv[0]));
+    hist->size = hist_size;
 
     /* Loop through the hash table. */
-    j = 0;
-    for (i = 0; i < HASH_SIZE; ++i)
-        for (achl = acht->buckets[i]; achl != NULL; achl = achl->next) {
+    double total_weight=0;
+    for (int j=0, i=0; i < HASH_SIZE; ++i) {
+        for (struct acolorhist_list_item *achl = acht->buckets[i]; achl != NULL; achl = achl->next) {
             /* Add the new entry. */
-            achv[j] = achl->ch;
+            hist->achv[j].acolor = to_f(gamma, achl->color.rgb);
+            hist->achv[j].adjusted_weight = hist->achv[j].perceptual_weight = achl->perceptual_weight;
+            total_weight += achl->perceptual_weight;
             ++j;
         }
+    }
 
+    hist->total_perceptual_weight = total_weight;
     /* All done. */
-    return achv;
+    return hist;
 }
 
 
@@ -268,11 +147,25 @@ static void pam_freeacolorhash(acolorhash_table acht)
     mempool_free(acht->mempool);
 }
 
-
-
-void pam_freeacolorhist(hist_item *achv)
+void pam_freeacolorhist(hist *hist)
 {
-    free(achv);
+    free(hist->achv);
+    free(hist);
+}
+
+colormap *pam_colormap(int colors)
+{
+    colormap *map = malloc(sizeof(colormap));
+    map->palette = calloc(colors, sizeof(map->palette[0]));
+    map->subset_palette = NULL;
+    map->colors = colors;
+    return map;
+}
+
+void pam_freecolormap(colormap *c)
+{
+    if (c->subset_palette) pam_freecolormap(c->subset_palette);
+    free(c->palette); free(c);
 }
 
 
